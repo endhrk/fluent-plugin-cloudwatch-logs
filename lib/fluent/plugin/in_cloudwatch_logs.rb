@@ -2,6 +2,14 @@ module Fluent
   class CloudwatchLogsInput < Input
     Plugin.register_input('cloudwatch_logs', self)
 
+    unless method_defined?(:log)
+      define_method("log") { $log }
+    end
+
+    unless method_defined?(:router)
+      define_method("router") { Engine }
+    end
+
     config_param :aws_key_id, :string, :default => nil
     config_param :aws_sec_key, :string, :default => nil
     config_param :region, :string, :default => nil
@@ -25,6 +33,8 @@ module Fluent
     end
 
     def start
+      super
+
       options = {}
       options[:credentials] = Aws::Credentials.new(@aws_key_id, @aws_sec_key) if @aws_key_id && @aws_sec_key
       options[:region] = @region if @region
@@ -36,6 +46,8 @@ module Fluent
     end
 
     def shutdown
+      super
+
       @finished = true
       @thread.join
     end
@@ -56,25 +68,24 @@ module Fluent
       elsif token_config[group_name][stream_name].nil?
         return nil
       else
-        token_config[group_name][stream_name].chomp
+        return token_config[group_name][stream_name].chomp
       end
     end
 
     def store_next_token(group_name, stream_name, token)
-      add_config = Hash.new { |hash,key| hash[key] = Hash.new {} }
-      add_config[group_name][stream_name] = token
+      new_config = Hash.new { |hash,key| hash[key] = Hash.new {} }
       if File.exist?(@state_file)
         current_config = YAML.load_file(@state_file)
-        new_config = current_config.merge(add_config)
-      else
-        new_config = add_config
+        new_config.update(current_config)
       end
+      new_config[group_name][stream_name] = token
       open(@state_file, 'w') do |f|
         YAML.dump(new_config, f)
       end
     end
 
     def run
+      log.debug "cloudwatch_logs: watch thread starting"
       @next_fetch_time = Time.now
 
       until @finished
@@ -82,15 +93,21 @@ module Fluent
           @next_fetch_time += @fetch_interval
 
           target = []
-          unless @log_group_name.to_s == '' or @log_stream_name.to_s == ''
-            target = [[@log_group_name, @log_stream_name]]
-          else
+          if @log_group_name.to_s == ''
             get_group_names.each do |group_name|
               get_stream_names(group_name).each do |stream_name|
                 target.push([group_name, stream_name])
               end
             end
+          elsif @log_stream_name.to_s == ''
+            get_stream_names(@log_group_name).each do |stream_name|
+              target.push([@log_group_name, stream_name])
+            end
+          else
+            target = [[@log_group_name, @log_stream_name]]
           end
+
+          log.debug "cloudwatch_logs: #{target.length} streams found"
 
           target.each do |group_name, stream_name|
             events = get_events(group_name, stream_name)
@@ -102,9 +119,10 @@ module Fluent
     end
 
     def get_events(group_name, stream_name)
+      log.debug "cloudwatch_logs: start get_events #{group_name}, #{stream_name}"
       request = {
         log_group_name: group_name,
-        log_stream_name: stream_name,
+        log_stream_name: stream_name
       }
       request[:next_token] = next_token(group_name, stream_name) if next_token(group_name, stream_name)
       response = @logs.get_log_events(request)
@@ -114,14 +132,15 @@ module Fluent
     end
 
     def output_events(events)
+      log.debug "cloudwatch_logs: start to output #{events.length} events"
       events.each do |event|
         if @parser
           record = @parser.parse(event.message)
-          Engine.emit(@tag, record[0], record[1])
+          router.emit(@tag, record[0], record[1])
         else
           time = (event.timestamp / 1000).floor
-          record = JSON.parse(event.message)
-          Engine.emit(@tag, time, record)
+#          record = JSON.parse(event.message)
+          router.emit(@tag, time, {"message" => event.message})
         end
       end
     end
