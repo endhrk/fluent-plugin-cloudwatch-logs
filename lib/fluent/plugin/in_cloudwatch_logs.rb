@@ -139,8 +139,9 @@ module Fluent
           router.emit(@tag, record[0], record[1])
         else
           time = (event.timestamp / 1000).floor
-#          record = JSON.parse(event.message)
-          router.emit(@tag, time, {"message" => event.message})
+          /{.*}/ =~ event.message
+          record = JSON.parse($&)
+          router.emit(@tag, time, record)
         end
       end
     end
