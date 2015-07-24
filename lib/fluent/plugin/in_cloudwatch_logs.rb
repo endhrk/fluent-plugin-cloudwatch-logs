@@ -134,14 +134,22 @@ module Fluent
     def output_events(events)
       log.debug "cloudwatch_logs: start to output #{events.length} events"
       events.each do |event|
-        if @parser
-          record = @parser.parse(event.message)
-          router.emit(@tag, record[0], record[1])
-        else
-          time = (event.timestamp / 1000).floor
-          /(\{.*\})/ =~ event.message
-          record = JSON.parse($1)
-          router.emit(@tag, time, record)
+        begin
+          if @parser
+            record = @parser.parse(event.message)
+            router.emit(@tag, record[0], record[1])
+          else
+            time = (event.timestamp / 1000).floor
+            /(\{.*\})/ =~ event.message
+            splited_message = $1
+            unless splited_message.nil? || splited_message.empty?
+              record = JSON.parse(splited_message)
+              router.emit(@tag, time, record)
+  	    end
+          end
+        rescue => ex
+          log.error "#{ex.message}"
+          next
         end
       end
     end
