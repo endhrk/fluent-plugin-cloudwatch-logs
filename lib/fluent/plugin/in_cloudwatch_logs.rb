@@ -105,7 +105,7 @@ module Fluent
     end
 
     def run
-      log.debug "cloudwatch_logs: watch thread starting"
+      log.info "cloudwatch_logs: watch thread starting"
       @next_fetch_time = Time.now
 
       until @finished
@@ -127,7 +127,7 @@ module Fluent
             target = [[@log_group_name, @log_stream_name]]
           end
 
-          log.debug "cloudwatch_logs: #{target.length} streams found"
+          log.info "cloudwatch_logs: #{target.length} streams found"
 
           target.each do |group_name, stream_name|
             events = get_events(group_name, stream_name)
@@ -142,7 +142,7 @@ module Fluent
     end
 
     def get_events(group_name, stream_name)
-      log.debug "cloudwatch_logs: start get_events #{group_name}, #{stream_name}"
+      log.info "cloudwatch_logs: start get_events #{group_name}, #{stream_name}"
       request = {
         log_group_name: group_name,
         log_stream_name: stream_name
@@ -155,11 +155,12 @@ module Fluent
     end
 
     def output_events(events)
-      log.debug "cloudwatch_logs: start to output #{events.length} events"
+      log.info "cloudwatch_logs: start to output #{events.length} events"
       events.each do |event|
         begin
           if @parser
             record = @parser.parse(event.message)
+            log.debug "record: #{record}"
             router.emit(@tag, record[0], record[1])
           else
             time = (event.timestamp / 1000).floor
@@ -167,6 +168,7 @@ module Fluent
             splited_message = $1
             unless splited_message.nil? || splited_message.empty?
               record = JSON.parse(splited_message)
+              log.debug "record: #{record}"
               router.emit(@tag, time, record)
   	    end
           end
