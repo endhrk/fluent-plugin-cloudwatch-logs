@@ -41,8 +41,11 @@ module Fluent
       options[:http_proxy] = @http_proxy if @http_proxy
       @logs = Aws::CloudWatchLogs::Client.new(options)
 
+      @updated = Time.now
       @finished = false
+      @mutex   = Mutex.new
       @thread = Thread.new(&method(:run))
+      @monitor = Thread.new(&method(:monitor))
     end
 
     def shutdown
@@ -84,6 +87,23 @@ module Fluent
       end
     end
 
+    def monitor
+      log.debug "cloudwatch_logs: monitor thread starting"
+      unless @finished
+          sleep @fetch_interval / 2
+          @mutex.synchronize do
+              log.debug "cloudwatch_logs: last update at #{@updated}"
+              now = Time.now
+              if @updated < now - @interval * 2
+                  log.warn "cloudwatch_logs: watcher thread is not working after #{@updated}. Restarting"
+                  @thread.kill
+                  @updated = now
+                  @thread = Thread.new(&method(:run))
+              end
+          end
+      end
+    end
+
     def run
       log.debug "cloudwatch_logs: watch thread starting"
       @next_fetch_time = Time.now
@@ -112,6 +132,9 @@ module Fluent
           target.each do |group_name, stream_name|
             events = get_events(group_name, stream_name)
             output_events(events)
+            @mutex.synchronize do
+              @updated = Time.now
+            end
           end
         end
         sleep 1
