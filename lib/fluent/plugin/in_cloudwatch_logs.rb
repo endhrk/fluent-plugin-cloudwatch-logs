@@ -92,10 +92,10 @@ module Fluent
       unless @finished
           sleep @fetch_interval / 2
           @mutex.synchronize do
-              log.debug "cloudwatch_logs: last update at #{@updated}"
+              log.debug "cloudwatch_logs: last update [#{@tag}/#{@log_group_name}/#{@log_stream_name}] at #{@updated}"
               now = Time.now
               if @updated < now - @interval * 2
-                  log.warn "cloudwatch_logs: watcher thread is not working after #{@updated}. Restarting"
+                  log.warn "cloudwatch_logs: [#{@tag}/#{@log_group_name}/#{@log_stream_name}] thread is not working after #{@updated}. Restarting"
                   @thread.kill
                   @updated = now
                   @thread = Thread.new(&method(:run))
@@ -142,7 +142,7 @@ module Fluent
     end
 
     def get_events(group_name, stream_name)
-      log.info "cloudwatch_logs: start get_events #{group_name}, #{stream_name}"
+      log.info "cloudwatch_logs: start get_events #{@tag} #{group_name}, #{stream_name}"
       request = {
         log_group_name: group_name,
         log_stream_name: stream_name
@@ -155,12 +155,11 @@ module Fluent
     end
 
     def output_events(events)
-      log.info "cloudwatch_logs: start to output #{events.length} events"
+      log.info "cloudwatch_logs: start to output #{@tag} #{events.length} events"
       events.each do |event|
         begin
           if @parser
             record = @parser.parse(event.message)
-            log.debug "record: #{record}"
             router.emit(@tag, record[0], record[1])
           else
             time = (event.timestamp / 1000).floor
@@ -168,7 +167,6 @@ module Fluent
             splited_message = $1
             unless splited_message.nil? || splited_message.empty?
               record = JSON.parse(splited_message)
-              log.debug "record: #{record}"
               router.emit(@tag, time, record)
   	    end
           end
