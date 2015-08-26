@@ -168,7 +168,10 @@ module Fluent
             unless splited_message.nil? || splited_message.empty?
               record = JSON.parse(splited_message)
               router.emit(@tag, time, record)
-  	    end
+            else
+              record = { m => event.message }
+              router.emit(@tag, time, record)
+            end
           end
         rescue => ex
           log.error "#{ex.message}"
