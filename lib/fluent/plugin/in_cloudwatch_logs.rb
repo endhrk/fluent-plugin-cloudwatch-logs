@@ -148,6 +148,7 @@ module Fluent
         log_stream_name: stream_name
       }
       request[:next_token] = next_token(group_name, stream_name) if next_token(group_name, stream_name)
+      log.debug "#{@tag}: #{group_name}, #{stream_name}: #{request}"
       response = @logs.get_log_events(request)
       store_next_token(group_name, stream_name, response.next_forward_token)
 
@@ -156,6 +157,8 @@ module Fluent
 
     def output_events(events)
       log.info "cloudwatch_logs: start to output #{@tag} #{events.length} events"
+      count = 0
+
       events.each do |event|
         begin
           if @parser
@@ -169,15 +172,17 @@ module Fluent
               record = JSON.parse(splited_message)
               router.emit(@tag, time, record)
             else
-              record = { m => event.message }
+	      record = JSON.generate({"message" => event.message})
               router.emit(@tag, time, record)
             end
           end
+          count += 1
         rescue => ex
           log.error "#{ex.message}"
           next
         end
       end
+      log.debug "cloudwatch_logs: end of output #{@tag} #{count}/#{events.length}"
     end
 
     def get_group_names
