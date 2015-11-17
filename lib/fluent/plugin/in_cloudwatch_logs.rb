@@ -88,7 +88,7 @@ module Fluent
     end
 
     def monitor
-      log.debug "cloudwatch_logs: monitor thread starting"
+      log.info "cloudwatch_logs: monitor thread starting"
       unless @finished
           sleep @fetch_interval / 2
           @mutex.synchronize do
@@ -148,7 +148,7 @@ module Fluent
         log_stream_name: stream_name
       }
       request[:next_token] = next_token(group_name, stream_name) if next_token(group_name, stream_name)
-      log.debug "#{@tag}: #{group_name}, #{stream_name}: #{request}"
+      log.info "#{@tag}: #{group_name}, #{stream_name}: #{request}"
       response = @logs.get_log_events(request)
       store_next_token(group_name, stream_name, response.next_forward_token)
 
@@ -172,7 +172,8 @@ module Fluent
               record = JSON.parse(splited_message)
               router.emit(@tag, time, record)
             else
-	      record = JSON.generate({"message" => event.message})
+	      record = JSON.generate({"message" => event.message, "@log_name" => @tag})
+              log.debug "#{@tag} record=#{record}"
               router.emit(@tag, time, record)
             end
           end
@@ -182,7 +183,7 @@ module Fluent
           next
         end
       end
-      log.debug "cloudwatch_logs: end of output #{@tag} #{count}/#{events.length}"
+      log.info "cloudwatch_logs: end of output #{@tag} #{count}/#{events.length}"
     end
 
     def get_group_names
